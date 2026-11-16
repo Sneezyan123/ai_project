@@ -37,17 +37,17 @@ The notebook also has three-fold `GroupKFold` for YOLO, grouped by video.
 
 Every run starts from COCO-pretrained weights, 12 epochs, seed 42.
 
-**Faster R-CNN ResNet-50 FPN v2.** This was our two-stage baseline. We used SGD, momentum 0.9, weight decay 0.0001 and a 300-iteration warmup. The learning rate drops 10× after epochs 8 and 11. The RPN proposes boxes and the second head refines them; for this dataset, the question was whether enough candidates survive in crowded frames.
+Faster R-CNN ResNet-50 FPN v2. This was our two-stage baseline. We used SGD, momentum 0.9, weight decay 0.0001 and a 300-iteration warmup. The learning rate drops 10× after epochs 8 and 11. The RPN proposes boxes and the second head refines them; for this dataset, the question was whether enough candidates survive in crowded frames.
 
 `frcnn_rpn` doubles the proposals to 4000 train / 2000 test, from 2000 / 1000. Its gain in the table is small. For `frcnn_loss` we changed Smooth L1 to `beta=0.05` and added label smoothing 0.1 together. That is one combined setting, so we cannot say which change helped or hurt.
 
-**RetinaNet ResNet-50 FPN v2.** We kept the same backbone family for the one-stage anchor-based comparison. There is no proposal stage here, and many anchors only see background. We left focal loss in place and focused on anchor sizes first.
+RetinaNet ResNet-50 FPN v2. We kept the same backbone family for the one-stage anchor-based comparison. There is no proposal stage here, and many anchors only see background. We left focal loss in place and focused on anchor sizes first.
 
 Anchors starting at 16 px fit the size distribution better. With sizes 16, 32, 64, 128, 256, AP_small in the table goes from 0.101 to 0.121. The other setting, focal `alpha=0.35` and `gamma=1.5`. RetinaNet is still behind Faster R-CNN.
 
-**YOLO11s / YOLO11m.** Resolution matters most in this comparison: 1280 gives a larger gain than changing loss weights to `box=10`, `cls=0.7`, `dfl=2`. YOLO needs no anchor sizes, but tiny objects still have few locations that can be assigned to them. Its assigner uses both class score and box overlap. We used 11s for the baseline experiments and 11m for the larger final setup.
+YOLO11s / YOLO11m. Resolution matters most in this comparison: 1280 gives a larger gain than changing loss weights to `box=10`, `cls=0.7`, `dfl=2`. YOLO needs no anchor sizes, but tiny objects still have few locations that can be assigned to them. Its assigner uses both class score and box overlap. We used 11s for the baseline experiments and 11m for the larger final setup.
 
-**RT-DETR-L.** We kept input size 640. The two alternatives were AdamW at lr `2e-4`, and loss weights `bbox=2`, `giou=5`. The latter changes both weights at once; we did not separate their effects. Hungarian matching gives each labelled object one query during training, so this pipeline has no NMS step. The baseline mAP is 0.2200, close to the Faster R-CNN baseline at 0.2197 and below YOLO/1280 at 0.2259. The RT-DETR loss-weight variant reaches 0.2270, above its baseline and YOLO/1280 in this table.
+RT-DETR-L. We kept input size 640. The two alternatives were AdamW at lr `2e-4`, and loss weights `bbox=2`, `giou=5`. The latter changes both weights at once; we did not separate their effects. Hungarian matching gives each labelled object one query during training, so this pipeline has no NMS step. The baseline mAP is 0.2200, close to the Faster R-CNN baseline at 0.2197 and below YOLO/1280 at 0.2259. The RT-DETR loss-weight variant reaches 0.2270, above its baseline and YOLO/1280 in this table.
 
 | Run | What we changed |
 | --- | --- |
@@ -83,12 +83,12 @@ Leaderboard scores come from `notebooks/kaggle_scores.csv`. A dash means unavail
 | `yolo_1280` | 0.2259 | 0.4638 | 0.145 | — | — |
 | `yolo_box` | 0.2085 | 0.3954 | 0.114 | — | — |
 | `rtdetr_base` (640) | 0.2200 | 0.423 | 0.115 | — | — |
-| `rtdetr_lr` | 0.2105 | — | — | — | — |
-| `rtdetr_loss` | 0.2270 | — | — | — | — |
-| YOLO11s, three-fold CV | 0.200 | — | — | — | — |
-| `final_yolo` (full frame) | — | — | — | 0.2555 | 0.2222 |
-| `final_yolo+tiles_nms` | — | — | — | 0.2384 | 0.2108 |
-| `final_yolo+tiles_soft` | — | — | — | 0.2429 | 0.2145 |
+| `rtdetr_lr` | 0.2105 |0.4104 | 0.112 | — | — |
+| `rtdetr_loss` | 0.2270 | 0.4438 | 0.124 | — | — |
+| YOLO11s, three-fold CV | 0.2041 | 0.3835 | 0.108 | — | — |
+| `final_yolo` (full frame) | 0.2271 | 0.465 | 0.143 | 0.2555 | 0.2222 |
+| `final_yolo+tiles_nms` | 0.2451 | 0.492 | 0.172 | 0.2384 | 0.2108 |
+| `final_yolo+tiles_soft` | 0.2510 | 0.499 | 0.166 | 0.2429 | 0.2145 |
 | `ensemble_yolo_frcnn` | 0.2654 | 0.5099 | 0.1507 | **0.2599** | **0.2314** |
 
 The graph uses the epoch values listed below. RT-DETR has higher mAP from epochs 2 through 11 and peaks at 0.2200 in epoch 11, before falling to 0.2168 in epoch 12. Faster R-CNN reaches its best mAP, 0.2197, in epoch 12. Their best epoch scores are nearly equal; at the final epoch, Faster R-CNN is ahead. The main results table reports these best epoch values for the two baselines. Faster R-CNN also has higher baseline AP50 (0.4421 versus 0.423) and AP_small (0.126 versus 0.115). The input sizes differ (short side 800 with a 1333 cap for Faster R-CNN, 640 for RT-DETR), so these results do not isolate the effect of architecture or establish equal compute budgets.
@@ -110,8 +110,7 @@ The graph uses the epoch values listed below. RT-DETR has higher mAP from epochs
 | 11 | 0.2168 | 0.2200 |
 | 12 | 0.2197 | 0.2168 |
 
-Tiling was worse than the full frame: minus 0.017 public / 0.011 private with NMS, and 0.013 / 0.008 with Soft-NMS. Resizing a 60% crop to 1280 changes the object scale quite a lot. Cut-off boxes at crop edges are another possible issue, especially when Soft-NMS keeps them at lower scores under the 500-box cap. We no longer have the tiled validation predictions to check which explanation matters more.
-
+Tiling was worse than the full frame: minus 0.017 public / 0.011 private with NMS, and 0.013 / 0.008 with Soft-NMS. Resizing a 60% crop to 1280 changes the object scale quite a lot. Cut-off boxes at crop edges are another possible issue, especially when Soft-NMS keeps them at lower scores under the 500-box cap.
 The ensemble did better even though it uses the weaker tiled YOLO file: `tiles_soft` at 0.2429 public, mixed with Faster R-CNN at 0.1981. We used WBF with weights 2:1 and IoU 0.55. The result is 0.004 public and 0.009 private above full-frame YOLO.
 
 We selected `final_yolo.csv` and `ensemble_yolo_frcnn.csv`. Those were also the two best private scores.
