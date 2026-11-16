@@ -63,9 +63,9 @@ All models start from COCO-pretrained weights and train for 12 epochs with seed 
 | Run                                                           | val mAP   | val AP50 | val AP_small | Public     | Private    |
 | ------------------------------------------------------------- | --------- | -------- | ------------ | ---------- | ---------- |
 | `frcnn_base`                                                  | 0.2197    | 0.4421   | 0.126        | 0.1981     | 0.1863     |
-| `final_yolo` (full frame) ✔                                   | not saved |          |              | 0.2555     | 0.2222     |
-| `final_yolo+tiles_nms`                                        | not saved |          |              | 0.2384     | 0.2108     |
-| `final_yolo+tiles_soft`                                       | not saved |          |              | 0.2429     | 0.2145     |
+| `final_yolo` (full frame) ✔                                   | |          |              | 0.2555     | 0.2222     |
+| `final_yolo+tiles_nms`                                        |  |          |              | 0.2384     | 0.2108     |
+| `final_yolo+tiles_soft`                                       |  |          |              | 0.2429     | 0.2145     |
 | `ensemble_yolo_frcnn` ✔ (val: full-frame YOLO + `frcnn_base`) | 0.2654    | 0.5099   | 0.1507       | **0.2599** | **0.2314** |
 
 **Tiling did not help.** Both tiled variants scored lower than full-frame inference: −0.017 public and −0.011 private with NMS, −0.013 and −0.008 with Soft-NMS. Possible causes: at `imgsz=1280` a 60% crop is upscaled, so the model sees objects larger than during training. Boxes cut at crop borders survive merging as extra false positives. Soft-NMS lowers the scores of duplicates instead of removing them, so the 500-box limit fills with low-scoring boxes. We could not confirm this on validation, because tiled validation predictions were not saved for that run. The notebook now saves them.
