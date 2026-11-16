@@ -1,0 +1,9 @@
+out/
+train/
+val/
+test/
+*.pt
+*.tar
+*.tar.gz
+__pycache__/
+.ipynb_checkpoints/
