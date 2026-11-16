@@ -7,45 +7,37 @@ date: 2026-11-09
 
 ## Task and approach
 
-This project focuses on detecting objects in VisDrone video frames. For each frame, the model predicts a class and a bounding box for every object. The prepared dataset contains eight classes: person, bicycle, car, van, truck, tricycle, bus, and motor. Frames are processed independently, without using predictions from neighbouring frames.
-
-The main challenges are small objects and crowded scenes. After resizing, a person or car may occupy only a few pixels, while nearby objects can be confused or merged. We therefore prepared a comparison of four detector families, followed by experiments with resolution, loss functions, and inference strategies.
-
-The methods are implemented in `notebooks/hw2_detection.ipynb`.
+During this project Me (Ivan) and Artem focuses on detecting objects in VisDrone video frames. We detect 8 classes (person, bicycle, car, van, truck, tricycle, bus, motor) Every frame is handled on its own, we do not use neighbouring frames. The hard part is size: half of the objects are smaller than 32 px, and some frames have hundreds of them. All code in `notebooks/`.
 
 ## Data preparation
 
-The exploration covers class frequencies, bounding box sizes, and objects per frame across sequences. We also compare image resolutions between train, validation, and test. These checks help choose settings that fit the dataset.
+We looked at class shares, box sizes and objects per frame for each clip. The number that shaped the rest of the work: after the torchvision resize (short side 800, long side up to 1333) the median box side is 31.7 px, and 50.9% of boxes are below 32 px. The default RetinaNet anchors start at 32 px, so we added a run with 16 px anchors and a YOLO run at 1280 instead of 960.
 
-The saved training statistics show that, after resizing to a short side of 800 pixels and a maximum long side of 1333, the median square root of box area is 31.7 pixels. For 50.9% of boxes, this value is below 32 pixels. This motivates trying smaller anchors and higher input resolution.
+To reduce training time and repeated examples, we keep every 10-th training frame and every fifth validation frame.
 
-To reduce training time and repeated examples, we keep every tenth training frame and every fifth validation frame. All baseline models use the same sampling. One drawback is that brief object appearances may be missed, so the sampling interval would also be worth testing separately.
+COCO annotations are converted to YOLO format: class index and normalised box centre, width, and height. For torchvision, boxes are converted back to corner coordinates, with class zerro reserved for background. Regions marked `iscrowd` are excluded from target boxes and painted over with RGB `(123, 117, 104)` in training images. This avoids treating unlabelled objects in these regions as background
 
-COCO annotations are converted to YOLO format: class index and normalised box centre, width, and height. For torchvision, boxes are converted back to corner coordinates, with class zero reserved for background. Regions marked `iscrowd` are excluded from target boxes and painted over with RGB `(123, 117, 104)` in training images. This avoids treating unlabelled objects in these regions as background. Painting also changes image appearance, so it is a compromise. Ground-truth overlays are included to check box coordinates visually.
-
-For torchvision, images are converted to RGB tensors in [0, 1], followed by the models’ built-in resizing and normalisation. Horizontal flipping is applied with probability 0.5. YOLO uses Ultralytics augmentation, with mosaic disabled for the final two epochs. The augmentation differences between frameworks need to be considered when comparing results.
+For torchvision, images are converted to RGB tensors in [0, 1], followed by the models’ built-in resizing and normalisation
 
 ## Validation
 
 The main comparison uses the provided train/validation split by video sequence. Randomly splitting individual frames could inflate the scores because neighbouring frames are very similar.
 
-All models are evaluated through the same `coco_eval` function on the same original, unpainted validation frames. The recorded metrics are mAP over IoU thresholds 0.50–0.95, AP50, AP75, and AP for small, medium, and large objects. Evaluation allows up to 500 detections per frame and passes ignored regions through `iscrowd`. FPS includes image loading and prediction, so speed should be compared on the same hardware.
+All models are evaluated through the same `coco_eval` function on the same original, unpainted validation frames. The recorded metrics are mAP over IoU thresholds 0.50–0.95, AP50, AP75, and AP for small, medium, and large objects. Evaluation allows up to 500 detections per frame and passes ignored regions through `iscrowd`.
 
-The notebook also implements three-fold `GroupKFold` validation by sequence for the YOLO baseline. It runs when `RUN_CV=True`, which defaults to a GPU-memory-based setting. This checks one model’s stability; cross-validation for every method and a pooled out-of-fold score are still missing. Any statistics used to tune anchors should be computed only from the training portion of the relevant fold.
+Also implements three-fold `GroupKFold` validation by sequence for the YOLO baseline. It runs when `RUN_CV=True`, which defaults to a GPU-memory-based setting. This checks one model’s stability. cross-validation for every method and a pooled out-of-fold score are still missing
 
 ## Models and experiments
 
-We use pretrained weights to spend the available GPU time adapting models to VisDrone. The main notebook uses 12 epochs and seed 42 for all training runs. Equal epoch counts do not imply equal compute budgets, so runtime also needs to be recorded. Batch size depends on GPU memory.
+All models start from COCO-pretrained weights and train for 12 epochs with seed 42. We had one rented A40, so 12 epochs was what fit into the budget for 13 runs. Batch size depends on GPU memory.
 
 **Faster R-CNN ResNet-50 FPN v2.** The RPN proposes candidate regions, and the second stage classifies them and refines their boxes. We test more RPN proposals to retain potential objects in crowded scenes, plus a smaller Smooth L1 beta for box regression together with label smoothing in the classification loss. Training uses SGD, momentum 0.9, weight decay 0.0001, a 300-iteration warmup, and tenfold learning-rate reductions after epochs 8 and 11.
 
-**RetinaNet ResNet-50 FPN v2.** This model predicts directly from anchors without a separate proposal stage. Focal loss reduces the contribution of easy examples, addressing the large number of background locations. We test smaller anchors and different focal loss settings separately. Smaller anchors may suit tiny objects better, but could also increase false positives.
+**RetinaNet ResNet-50 FPN v2.** This model predicts directly from anchors without a separate proposal stage. Focal loss reduces the contribution of easy examples, addressing the large number of background locations. We test smaller anchors and different focal loss settings separately.
 
-**YOLO11s.** We use this anchor-free detector as a practical baseline. It does not require predefined anchor shapes; training locations are assigned to objects using classification scores and box overlap. The experiments increase input resolution from 960 to 1280 and adjust the box, classification, and DFL loss weights. Higher resolution should preserve more detail, at the cost of memory and inference time.
+**YOLO11s.** We picked it because Ultralytics trains it fast and it needs no anchor tuning. Its task-aligned assigner chooses positive locations by class score and IoU together, so even tiny boxes get some positives. We tried a larger input (1280 instead of 960) and higher box/DFL loss weights
 
-**RT-DETR-L.** This query-based model produces a set of predictions matched one-to-one with ground truth during training. The matching discourages duplicates and removes the need for conventional NMS. We compare a different learning rate and adjusted bbox/GIoU loss weights. Training curves are needed to check whether 12 epochs are enough for convergence before drawing conclusions about this architecture.
-
-The table lists the notebook’s main configurations.
+**RT-DETR-L.** Each ground-truth box is matched to exactly one query (Hungarian matching), so the model learns not to output duplicates and needs no NMS. We set up runs with AdamW at lr 2e-4 and with more weight on GIoU.
 
 | Run | Configuration or change from baseline |
 |---|---|
@@ -68,32 +60,57 @@ The table lists the notebook’s main configurations.
 
 ### Results
 
-| Run | val mAP | val AP50 | val AP_small | Kaggle submission |
-|---|---|---|---|---|
-| `frcnn_base` | 0.2197 | 0.4421 | 0.126 | `frcnn_base.csv`, submission error |
-| `frcnn_rpn`, `frcnn_loss` | not finished | | | — |
-| `retina_base`, `retina_anchors`, `retina_focal` | not finished | | | — |
-| `yolo_base`, `yolo_1280`, `yolo_box` | not saved | | | — |
-| `rtdetr_base`, `rtdetr_lr`, `rtdetr_loss` | not finished | | | — |
-| `final_yolo` (full frame) | not saved | | | `final_yolo.csv` |
-| `final_yolo+tiles_nms` | not saved | | | `final_yolo_tiles_nms.csv` |
-| `final_yolo+tiles_soft` | not saved | | | `final_yolo_tiles_soft.csv` |
-| `ensemble_yolo_frcnn` (val: full-frame YOLO + `frcnn_base`) | 0.2654 | 0.5099 | 0.1507 | `ensemble_yolo_frcnn.csv` |
+| Run | val mAP | val AP50 | val AP_small | Public | Private |
+|---|---|---|---|---|---|
+| `frcnn_base` | 0.2197 | 0.4421 | 0.126 | 0.1981 | 0.1863 |
+| `frcnn_rpn`, `frcnn_loss` | not finished | | | — | — |
+| `retina_base`, `retina_anchors`, `retina_focal` | not finished | | | — | — |
+| `yolo_base`, `yolo_1280`, `yolo_box` | not saved | | | — | — |
+| `rtdetr_base`, `rtdetr_lr`, `rtdetr_loss` | not finished | | | — | — |
+| `final_yolo` (full frame) ✔ | not saved | | | 0.2555 | 0.2222 |
+| `final_yolo+tiles_nms` | not saved | | | 0.2384 | 0.2108 |
+| `final_yolo+tiles_soft` | not saved | | | 0.2429 | 0.2145 |
+| `ensemble_yolo_frcnn` ✔ (val: full-frame YOLO + `frcnn_base`) | 0.2654 | 0.5099 | 0.1507 | **0.2599** | **0.2314** |
+
+✔ marks the two submissions selected for the final score. Public and private scores were read from the Kaggle submissions page. Run `python notebooks/make_report_tables.py --kaggle notebooks/kaggle_scores.csv` to rebuild this table from `out/results_*.csv`.
+
+**Tiling did not help.** Both tiled variants scored lower than full-frame inference: −0.017 public and −0.011 private with NMS, −0.013 and −0.008 with Soft-NMS. Possible causes: at `imgsz=1280` a 60% crop is upscaled, so the model sees objects larger than during training. Boxes cut at crop borders survive merging as extra false positives. Soft-NMS lowers the scores of duplicates instead of removing them, so the 500-box limit fills with low-scoring boxes. We could not confirm this on validation, because tiled validation predictions were not saved for that run. The notebook now saves them.
+
+**The ensemble helped despite the weaker YOLO input.** It fused `tiles_soft` (0.2429 public) with Faster R-CNN (0.1981) and still beat full-frame YOLO, at +0.004 public and +0.009 private. This matches the validation gain of the full-frame ensemble over `frcnn_base`. The two models make different errors, and WBF averages box coordinates rather than discarding boxes. Fusing full-frame YOLO with Faster R-CNN is the obvious next step.
+
+**Final selection.** We chose one safe and one riskier submission: `final_yolo.csv` (best single model) and `ensemble_yolo_frcnn.csv` (the ensemble, which also gained on validation). They turned out to be the top two on the private leaderboard as well!
 
 ## Final pipeline and error analysis
 
-For the YOLO model with the highest validation mAP, the notebook compares full-frame inference with four overlapping crops, each covering 60% of the frame’s width and height. Crop predictions are mapped back to frame coordinates and combined with full-frame predictions. The merging options are NMS at IoU 0.6 and Gaussian Soft-NMS with sigma 0.5. This isolates the effect of inference changes without retraining.
+For the YOLO model with the highest validation mAP, the notebook compares full-frame inference with four overlapping crops, each covering 60% of the frame’s width and height. Crop predictions are mapped back to frame coordinates and combined with full-frame predictions. The merging options are NMS at IoU 0.6 and Gaussian Soft-NMS with sigma 0.5
 
-The notebook includes prediction matching and visualisation of frames with the most errors.
-
-Selection considers validation mAP, AP_small, stability, and speed.
+`notebooks/error_analysis.py` breaks the errors of the saved validation predictions into TIDE-style types: wrong class, poor localisation, duplicate, background and missed. It counts them by object size, class and clip, measures how much AP50 an oracle fix of each type would recover, and draws the worst frames to `images/`.
 
 ## Reproduction
 
-The project requires Python, CUDA-compatible PyTorch/torchvision, Ultralytics, faster-coco-eval, NumPy, pandas, Pillow, matplotlib, scikit-learn, tqdm, and Jupyter. Local versions are recorded in `requirements.txt`. The runs completed so far used a Runpod pod with an NVIDIA A40 and the image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` (PyTorch 2.8.0, CUDA 12.8) with Ultralytics 8.4.208.
+The project requires Python, CUDA-compatible PyTorch/torchvision, Ultralytics, faster-coco-eval, NumPy, pandas, Pillow, matplotlib, scikit-learn, tqdm, and Jupyter. `requirements.txt` lists the local environment. The runs completed so far used a Runpod pod with an NVIDIA A40 and the image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` (PyTorch 2.8.0, CUDA 12.8) with Ultralytics 8.4.208.
 
 1. Place `train/`, `val/`, `test/`, and `test_images.csv` in the data directory. Set `HW2_DATA` for a local run.
-2. Open `notebooks/hw2_detection.ipynb`, set the environment variable `HW2_PART=all`, and execute the cells in order. Alternatively, run `yolo`, `rcnn`, and `detr` separately, then `merge` to build the joint tables. On machines that report many CPU cores, set `OMP_NUM_THREADS=8` and `OPENBLAS_NUM_THREADS=8`; otherwise OpenBLAS can crash the kernel.
+2. Open `notebooks/hw2_detection.ipynb`, set the environment variable `HW2_PART=all`, and execute the cells in order. Alternatively, run `yolo`, `rcnn`, and `detr` separately, then `merge` to build the joint tables. With many CPU cores, set `OMP_NUM_THREADS=8` and `OPENBLAS_NUM_THREADS=8`, or OpenBLAS can crash the kernel. `HW2_BIG_GPU=0/1` forces the batch sizes, and `HW2_WORKERS` sets the dataloader workers.
 3. For the ensemble submission, run `python notebooks/ensemble.py` from the directory that contains `out/`, `val/`, and `test_images.csv`.
-4. Check `out/results_*.csv`, checkpoints and training logs in `out/runs/`, and prediction files in `out/submissions/`. The notebook checks row counts, class indices, and box formatting.
+4. Check `out/results_*.csv`, checkpoints and training logs in `out/runs/`, and prediction files in `out/submissions/`.
 5. Seed 42 alone does not guarantee identical outputs across GPUs.
+
+`ensemble.py` takes the model pair, weights and IoU as arguments (see `--help`). It validates the same YOLO variant that goes into the test file when `val_preds_tiles_soft.json` exists, otherwise it falls back to full-frame YOLO. The validation score is written to `out/results_ensemble.csv`. `check_submission.py` validates a CSV before upload, and `python -m pytest tests` runs CPU tests of the box utilities, the label conversion, WBF and the error types.
+
+## References
+
+Code was written with help from AI assistants. Ideas and libraries used:
+
+0. O. Basystyi. *Multiple Object Video Detection, HW2, UCU AI 2026.* Kaggle, 2026. https://www.kaggle.com/competitions/multiple-object-video-detection-hw-2-ucu-ai-2026
+1. P. Zhu et al. *Detection and Tracking Meet Drones Challenge.* IEEE TPAMI, 2021. VisDrone dataset.
+2. S. Ren, K. He, R. Girshick, J. Sun. *Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks.* NeurIPS, 2015.
+3. T.-Y. Lin, P. Goyal, R. Girshick, K. He, P. Dollár. *Focal Loss for Dense Object Detection.* ICCV, 2017. RetinaNet.
+4. Y. Li, S. Xie, X. Chen, P. Dollár, K. He, R. Girshick. *Benchmarking Detection Transfer Learning with Vision Transformers.* 2021. Source of the torchvision `v2` Faster R-CNN and RetinaNet weights.
+5. Y. Zhao et al. *DETRs Beat YOLOs on Real-time Object Detection.* CVPR, 2024. RT-DETR.
+6. G. Jocher, J. Qiu. *Ultralytics YOLO11*, 2024. https://github.com/ultralytics/ultralytics
+7. N. Bodla, B. Singh, R. Chellappa, L. S. Davis. *Soft-NMS — Improving Object Detection With One Line of Code.* ICCV, 2017.
+8. R. Solovyev, W. Wang, T. Gabruseva. *Weighted Boxes Fusion: Ensembling Boxes from Different Object Detection Models.* Image and Vision Computing, 2021. Our `ensemble.py` is a simplified re-implementation.
+9. F. C. Akyon, S. O. Altinuc, A. Temizel. *Slicing Aided Hyper Inference and Fine-tuning for Small Object Detection.* ICIP, 2022. Idea behind the overlapping-crop inference.
+10. torchvision detection models and references: https://github.com/pytorch/vision
+11. faster-coco-eval: https://github.com/MiXaiLL76/faster_coco_eval

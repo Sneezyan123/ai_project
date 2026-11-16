@@ -1,0 +1,6 @@
+file,public,private,selected
+frcnn_base.csv,0.1981230199,0.1863005958,0
+final_yolo.csv,0.2554974661,0.2221737124,1
+final_yolo_tiles_nms.csv,0.2384070174,0.2107810500,0
+final_yolo_tiles_soft.csv,0.2428859875,0.2145333322,0
+ensemble_yolo_frcnn.csv,0.2598881968,0.2314011166,1
